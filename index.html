@@ -398,7 +398,8 @@ async function lancer() {
     else demanderConformite(tentative);
   } else {
     afficher('Échec — rien lu en ' + DUREE_MAX / 1000 + ' s');
-    const connue = etat.etiquettes[etat.produit];
+    // La réponse de l'application native vaut pour le produit dans cet éclairage seulement.
+    const connue = etat.etiquettes[etat.produit + '|' + etat.eclairage];
     if (connue) { tentative.etiquette = connue; terminer(); }
     else demanderEtiquette(tentative);
   }
@@ -416,8 +417,8 @@ function demanderConformite(t) {
 
 function demanderEtiquette(t) {
   poser(`<p>Passe le produit n° ${t.produit} dans l’application native, sur ce téléphone. La lit-elle ?</p>`,
-    [['Oui, elle le lit', 'oui', () => { etat.etiquettes[t.produit] = 'lisible'; t.etiquette = 'lisible'; }],
-     ['Non plus', 'non', () => { etat.etiquettes[t.produit] = 'illisible'; t.etiquette = 'illisible'; }],
+    [['Oui, elle le lit', 'oui', () => { etat.etiquettes[t.produit + '|' + t.eclairage] = 'lisible'; t.etiquette = 'lisible'; }],
+     ['Non plus', 'non', () => { etat.etiquettes[t.produit + '|' + t.eclairage] = 'illisible'; t.etiquette = 'illisible'; }],
      ['Plus tard', '', () => { t.etiquette = ''; }]]);
 }
 
