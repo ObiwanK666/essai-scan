@@ -1,0 +1,614 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>Essai de scan</title>
+<style>
+  :root {
+    --fond: #f5f5f2; --carte: #ffffff; --texte: #1c1c1a; --doux: #66665f;
+    --ligne: #dcdcd5; --accent: #1f5fbf; --ok: #1d7a3a; --ko: #b3261e; --attente: #8a6a00;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fond: #141413; --carte: #1f1f1d; --texte: #ecece7; --doux: #a3a39b;
+      --ligne: #3a3a36; --accent: #7aa7ff; --ok: #5fcf83; --ko: #ff8a80; --attente: #e0c050;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; padding: 12px 16px 48px; background: var(--fond); color: var(--texte);
+    font: 16px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  h1 { font-size: 1.3rem; margin: 4px 0 12px; }
+  h2 { font-size: 1rem; margin: 0 0 8px; }
+  .carte { background: var(--carte); border: 1px solid var(--ligne); border-radius: 12px; padding: 12px; margin-bottom: 12px; }
+  .avert { border-color: var(--ko); color: var(--ko); }
+  label { display: block; font-size: .85rem; color: var(--doux); margin-bottom: 8px; }
+  input, select { display: block; width: 100%; margin-top: 4px; font: inherit; color: var(--texte);
+    background: var(--fond); border: 1px solid var(--ligne); border-radius: 8px; padding: 8px; }
+  .deux { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  button { font: inherit; border-radius: 10px; border: 1px solid var(--ligne); background: var(--fond);
+    color: var(--texte); padding: 10px 12px; cursor: pointer; }
+  button:disabled { opacity: .45; cursor: default; }
+  button.principal { width: 100%; background: var(--accent); color: #fff; border: none; font-weight: 600;
+    font-size: 1.15rem; padding: 16px; margin-top: 10px; }
+  button.oui { background: var(--ok); color: #fff; border: none; }
+  button.non { background: var(--ko); color: #fff; border: none; }
+  .rangee { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+  .rangee > button { flex: 1 1 auto; }
+  #moteurs ul { list-style: none; padding: 0; margin: 0; font-size: .9rem; }
+  #moteurs li { padding: 4px 0; border-bottom: 1px solid var(--ligne); }
+  #moteurs li:last-child { border-bottom: none; }
+  .pret { color: var(--ok); } .echec { color: var(--ko); } .encours { color: var(--attente); }
+  #cadre { position: relative; margin: 0 auto; width: 100%; aspect-ratio: 3 / 4; max-height: 55vh;
+    background: #000; border-radius: 10px; overflow: hidden; }
+  #video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; }
+  #bande { position: absolute; left: 0; right: 0; top: 25%; height: 50%;
+    border-top: 2px dashed rgba(255,255,255,.8); border-bottom: 2px dashed rgba(255,255,255,.8);
+    pointer-events: none; }
+  #affiche { position: absolute; left: 0; right: 0; bottom: 0; padding: 10px; text-align: center;
+    color: #fff; font-size: 1.25rem; font-weight: 600; background: rgba(0,0,0,.55); min-height: 1em; }
+  #affiche:empty { display: none; }
+  .produit { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 10px; }
+  .produit button { width: 56px; font-size: 1.4rem; padding: 6px; }
+  .produit span { font-size: 1.1rem; }
+  #question { margin-top: 10px; padding: 10px; border: 2px solid var(--attente); border-radius: 10px; }
+  #question p { margin: 0 0 6px; }
+  .code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 1.35rem; letter-spacing: .06em; }
+  .tableau { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: .82rem; }
+  th, td { text-align: right; padding: 4px 6px; border-bottom: 1px solid var(--ligne); white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; }
+  #liste { font-size: .85rem; }
+  #liste div { padding: 5px 0; border-bottom: 1px solid var(--ligne); }
+  .petit { font-size: .8rem; color: var(--doux); }
+</style>
+</head>
+<body>
+<h1>Essai de scan</h1>
+
+<section id="securite" class="carte avert" hidden></section>
+
+<section id="moteurs" class="carte">
+  <h2>Moteurs de lecture</h2>
+  <ul id="etat-moteurs"></ul>
+  <p class="petit">Chaque moteur est vérifié au chargement sur un code-barres dessiné par la page.</p>
+</section>
+
+<section class="carte">
+  <label>Téléphone
+    <input id="telephone" autocomplete="off" placeholder="ex. iPhone X · iOS 16.7">
+  </label>
+  <div class="deux">
+    <label>Moteur <select id="moteur"></select></label>
+    <label>Éclairage
+      <select id="eclairage">
+        <option value="bonne">bonne lumière</option>
+        <option value="faible">lumière faible</option>
+      </select>
+    </label>
+  </div>
+  <label>Caméra <select id="camera"><option value="">— ouvre la caméra d'abord —</option></select></label>
+</section>
+
+<section class="carte">
+  <div id="cadre">
+    <video id="video" playsinline muted autoplay></video>
+    <div id="bande"></div>
+    <div id="affiche"></div>
+  </div>
+  <button id="ouvrir" class="principal">Ouvrir la caméra</button>
+  <div class="produit">
+    <button id="moins" aria-label="Produit précédent">−</button>
+    <span>Produit n° <b id="num">1</b> / <span id="total"></span></span>
+    <button id="plus" aria-label="Produit suivant">+</button>
+  </div>
+  <button id="lancer" class="principal" disabled>Lancer</button>
+  <div id="question" hidden></div>
+</section>
+
+<section class="carte">
+  <h2>Bilan</h2>
+  <div id="bilan" class="tableau"></div>
+  <p class="petit">Seuil : aucune lecture fausse ; au plus <span id="seuil-bonne"></span> échecs du navigateur
+    sur <span class="nb"></span> en bonne lumière, <span id="seuil-faible"></span> en lumière faible.
+    Le bilan retient la dernière tentative de chaque produit.</p>
+</section>
+
+<section class="carte">
+  <h2>Tentatives</h2>
+  <div class="rangee">
+    <button id="telecharger">Télécharger le CSV</button>
+    <button id="partager" hidden>Partager</button>
+    <button id="copier">Copier</button>
+  </div>
+  <div class="rangee">
+    <button id="annuler">Annuler la dernière</button>
+    <button id="effacer">Tout effacer</button>
+  </div>
+  <div id="liste"></div>
+</section>
+
+<script type="module">
+// ---------------------------------------------------------------------------
+// Réglages de l'essai — fixés avant l'essai, à ne pas changer en cours de route.
+// ---------------------------------------------------------------------------
+const DUREE_MAX = 5000;          // ms par tentative
+const NB_PRODUITS = 20;
+const SEUIL = { bonne: 2, faible: 4 };   // échecs du navigateur tolérés sur NB_PRODUITS
+const FORMATS = ['ean_13', 'ean_8', 'upc_a', 'upc_e'];
+const URL_ZXING_CPP = 'https://cdn.jsdelivr.net/npm/barcode-detector@3.2.3/dist/es/ponyfill.min.js';
+const URL_ZXING_JS = 'https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js';
+const CODE_TEST = '4006381333931';
+const CLE = 'essai-scan-v1';
+
+const $ = (id) => document.getElementById(id);
+
+// ---------------------------------------------------------------------------
+// État, conservé dans le navigateur du téléphone
+// ---------------------------------------------------------------------------
+const ETAT_VIDE = { telephone: '', moteur: 'zxing-cpp', eclairage: 'bonne', produit: 1,
+  references: {}, etiquettes: {}, tentatives: [] };
+let etat = structuredCloneSimple(ETAT_VIDE);
+try { Object.assign(etat, JSON.parse(localStorage.getItem(CLE) || '{}')); } catch (e) { /* stockage indisponible */ }
+function sauver() { try { localStorage.setItem(CLE, JSON.stringify(etat)); } catch (e) { /* idem */ } }
+function structuredCloneSimple(o) { return JSON.parse(JSON.stringify(o)); }
+
+// ---------------------------------------------------------------------------
+// Les trois moteurs. Chacun reçoit une toile (canvas) et rend {texte, format} ou null.
+// ---------------------------------------------------------------------------
+const moteurs = {
+  'integre':   { nom: 'Lecteur intégré du navigateur', court: 'intégré', detect: null, statut: 'vérification…', classe: 'encours' },
+  'zxing-cpp': { nom: 'Bibliothèque ZXing-C++ (barcode-detector 3.2.3)', court: 'ZXing-C++', detect: null, statut: 'vérification…', classe: 'encours' },
+  'zxing-js':  { nom: 'Seconde bibliothèque ZXing JS (@zxing/library 0.21.3)', court: 'ZXing JS', detect: null, statut: 'vérification…', classe: 'encours' },
+};
+
+function premierCode(codes) {
+  const c = (codes || []).find((x) => FORMATS.includes(x.format));
+  return c ? { texte: c.rawValue, format: c.format } : null;
+}
+
+async function chargerIntegre() {
+  if (!('BarcodeDetector' in window)) throw new Error('absent de ce navigateur');
+  const pris = await window.BarcodeDetector.getSupportedFormats();
+  const formats = FORMATS.filter((f) => pris.includes(f));
+  if (!formats.includes('ean_13')) throw new Error('ne lit pas l’EAN-13 (formats : ' + (pris.join(', ') || 'aucun') + ')');
+  const det = new window.BarcodeDetector({ formats });
+  return async (toile) => premierCode(await det.detect(toile));
+}
+
+async function chargerZxingCpp() {
+  const mod = await import(URL_ZXING_CPP);
+  const det = new mod.BarcodeDetector({ formats: FORMATS });
+  return async (toile) => premierCode(await det.detect(toile));
+}
+
+function chargerScript(url) {
+  return new Promise((ok, ko) => {
+    const s = document.createElement('script');
+    s.src = url; s.onload = ok;
+    s.onerror = () => ko(new Error('chargement refusé'));
+    document.head.appendChild(s);
+  });
+}
+
+async function chargerZxingJs() {
+  await chargerScript(URL_ZXING_JS);
+  const Z = window.ZXing;
+  if (!Z) throw new Error('bibliothèque chargée mais introuvable');
+  const indices = new Map();
+  indices.set(Z.DecodeHintType.POSSIBLE_FORMATS,
+    [Z.BarcodeFormat.EAN_13, Z.BarcodeFormat.EAN_8, Z.BarcodeFormat.UPC_A, Z.BarcodeFormat.UPC_E]);
+  indices.set(Z.DecodeHintType.TRY_HARDER, true);
+  const lecteur = new Z.MultiFormatReader();
+  lecteur.setHints(indices);
+  const pasTrouve = [Z.NotFoundException, Z.ChecksumException, Z.FormatException].filter(Boolean);
+  return async (toile) => {
+    const w = toile.width, h = toile.height;
+    const px = toile.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, w, h).data;
+    const lum = new Uint8ClampedArray(w * h);
+    for (let i = 0, j = 0; i < lum.length; i++, j += 4) {
+      lum[i] = (px[j] * 306 + px[j + 1] * 601 + px[j + 2] * 117) >> 10;
+    }
+    const bitmap = new Z.BinaryBitmap(new Z.HybridBinarizer(new Z.RGBLuminanceSource(lum, w, h)));
+    try {
+      const r = lecteur.decodeWithState(bitmap);
+      return { texte: r.getText(), format: String(Z.BarcodeFormat[r.getBarcodeFormat()]).toLowerCase() };
+    } catch (e) {
+      if (pasTrouve.some((T) => e instanceof T)) return null;
+      throw e;
+    }
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Code-barres de contrôle, dessiné par la page (EAN-13)
+// ---------------------------------------------------------------------------
+const L = ['0001101', '0011001', '0010011', '0111101', '0100011', '0110001', '0101111', '0111011', '0110111', '0001011'];
+const R = L.map((c) => [...c].map((b) => (b === '0' ? '1' : '0')).join(''));
+const G = R.map((c) => [...c].reverse().join(''));
+const PARITE = ['LLLLLL', 'LLGLGG', 'LLGGLG', 'LLGGGL', 'LGLLGG', 'LGGLLG', 'LGGGLL', 'LGLGLG', 'LGLGGL', 'LGGLGL'];
+
+function modulesEan13(code) {
+  const d = [...code].map(Number);
+  let m = '101';
+  for (let i = 1; i <= 6; i++) m += (PARITE[d[0]][i - 1] === 'L' ? L : G)[d[i]];
+  m += '01010';
+  for (let i = 7; i <= 12; i++) m += R[d[i]];
+  return m + '101';
+}
+
+function toileDeControle() {
+  const mod = modulesEan13(CODE_TEST), px = 3, marge = 12;
+  const t = document.createElement('canvas');
+  t.width = (mod.length + 2 * marge) * px; t.height = 130;
+  const c = t.getContext('2d', { willReadFrequently: true });
+  c.fillStyle = '#fff'; c.fillRect(0, 0, t.width, t.height);
+  c.fillStyle = '#000';
+  [...mod].forEach((b, i) => { if (b === '1') c.fillRect((marge + i) * px, 20, px, 90); });
+  return t;
+}
+
+async function verifierMoteurs() {
+  const controle = toileDeControle();
+  const chargeurs = { 'integre': chargerIntegre, 'zxing-cpp': chargerZxingCpp, 'zxing-js': chargerZxingJs };
+  for (const [cle, charger] of Object.entries(chargeurs)) {
+    const m = moteurs[cle];
+    try {
+      const detect = await charger();
+      const r = await detect(controle);
+      if (r && r.texte === CODE_TEST) { m.detect = detect; m.statut = 'prêt'; m.classe = 'pret'; }
+      else { m.statut = 'chargé, mais ne lit pas le code de contrôle' + (r ? ' (lu : ' + r.texte + ')' : ''); m.classe = 'echec'; }
+    } catch (e) {
+      m.statut = 'indisponible — ' + (e && e.message ? e.message : String(e)); m.classe = 'echec';
+    }
+    afficherMoteurs();
+  }
+  if (!moteurs[etat.moteur].detect) {
+    const dispo = Object.keys(moteurs).find((k) => moteurs[k].detect);
+    if (dispo) { etat.moteur = dispo; sauver(); }
+  }
+  afficherMoteurs();
+  majBoutons();
+}
+
+function afficherMoteurs() {
+  $('etat-moteurs').innerHTML = Object.values(moteurs)
+    .map((m) => `<li>${m.nom} : <span class="${m.classe}">${echapper(m.statut)}</span></li>`).join('');
+  $('moteur').innerHTML = Object.entries(moteurs)
+    .map(([k, m]) => `<option value="${k}" ${m.detect ? '' : 'disabled'} ${k === etat.moteur ? 'selected' : ''}>${m.court}${m.detect ? '' : ' (indisponible)'}</option>`).join('');
+}
+
+// ---------------------------------------------------------------------------
+// Caméra
+// ---------------------------------------------------------------------------
+const video = $('video');
+let flux = null;
+
+async function ouvrirCamera(idCamera) {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    afficher('Caméra inaccessible : la page doit être servie en HTTPS.');
+    return;
+  }
+  if (flux) flux.getTracks().forEach((p) => p.stop());
+  const contraintes = { width: { ideal: 1280 }, height: { ideal: 720 } };
+  if (idCamera) contraintes.deviceId = { exact: idCamera };
+  else contraintes.facingMode = { ideal: 'environment' };
+  try {
+    flux = await navigator.mediaDevices.getUserMedia({ video: contraintes, audio: false });
+  } catch (e) {
+    afficher('Caméra refusée : ' + (e.name || e));
+    return;
+  }
+  video.srcObject = flux;
+  try { await video.play(); } catch (e) { /* lecture automatique déjà en cours */ }
+  await listerCameras();
+  $('ouvrir').textContent = 'Caméra ouverte';
+  $('ouvrir').disabled = true;
+  afficher('');
+  majBoutons();
+}
+
+video.addEventListener('loadedmetadata', () => {
+  const ar = video.videoWidth / video.videoHeight;
+  const cadre = $('cadre');
+  cadre.style.aspectRatio = String(ar);
+  cadre.style.width = `min(100%, calc(55vh * ${ar}))`;
+});
+
+async function listerCameras() {
+  const piste = flux && flux.getVideoTracks()[0];
+  const actuelle = piste ? (piste.getSettings().deviceId || '') : '';
+  const appareils = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'videoinput');
+  $('camera').innerHTML = appareils
+    .map((d, i) => `<option value="${d.deviceId}" ${d.deviceId === actuelle ? 'selected' : ''}>${echapper(d.label || 'caméra ' + (i + 1))}</option>`).join('');
+}
+
+function libelleCamera() {
+  const piste = flux && flux.getVideoTracks()[0];
+  if (!piste) return '';
+  const s = piste.getSettings();
+  return `${piste.label || ''} ${s.width || '?'}x${s.height || '?'}`.trim();
+}
+
+// La toile reçoit la bande centrale de l'image : toute la largeur, la moitié de la hauteur.
+// Les trois moteurs lisent exactement la même image.
+const trame = document.createElement('canvas');
+const ctxTrame = trame.getContext('2d', { willReadFrequently: true });
+function saisirTrame() {
+  const vw = video.videoWidth, vh = video.videoHeight;
+  if (!vw || !vh || video.readyState < 2) return null;
+  const hb = Math.round(vh * 0.5), y0 = Math.round(vh * 0.25);
+  if (trame.width !== vw) trame.width = vw;
+  if (trame.height !== hb) trame.height = hb;
+  ctxTrame.drawImage(video, 0, y0, vw, hb, 0, 0, vw, hb);
+  return trame;
+}
+
+// ---------------------------------------------------------------------------
+// Une tentative
+// ---------------------------------------------------------------------------
+let enCours = false;
+let questionOuverte = false;
+
+async function lancer() {
+  const m = moteurs[etat.moteur];
+  if (enCours || questionOuverte || !m.detect || !flux) return;
+  enCours = true; majBoutons();
+  const t0 = performance.now();
+  let trouve = null, erreur = null;
+  while (performance.now() - t0 < DUREE_MAX) {
+    afficher(sec(DUREE_MAX - (performance.now() - t0)));
+    const t = saisirTrame();
+    if (t) {
+      try { trouve = await m.detect(t); } catch (e) { erreur = e; }
+      if (trouve) break;
+    }
+    await new Promise((ok) => requestAnimationFrame(ok));
+  }
+  const duree = Math.round(performance.now() - t0);
+  enCours = false;
+
+  const tentative = {
+    horodatage: new Date().toISOString(),
+    telephone: etat.telephone,
+    camera: libelleCamera(),
+    moteur: etat.moteur,
+    eclairage: etat.eclairage,
+    produit: etat.produit,
+    resultat: trouve ? 'lu' : 'echec',
+    code: trouve ? trouve.texte : '',
+    format: trouve ? trouve.format : '',
+    duree_ms: trouve ? duree : '',
+    conformite: '',
+    etiquette: '',
+    erreur: erreur ? String(erreur.message || erreur) : '',
+    navigateur: navigator.userAgent,
+  };
+  etat.tentatives.push(tentative);
+
+  if (trouve) {
+    if (navigator.vibrate) navigator.vibrate(80);
+    afficher(trouve.texte + ' · ' + sec(duree));
+    const ref = etat.references[etat.produit];
+    if (ref) { tentative.conformite = normaliser(ref) === normaliser(trouve.texte) ? 'juste' : 'faux'; terminer(); }
+    else demanderConformite(tentative);
+  } else {
+    afficher('Échec — rien lu en ' + DUREE_MAX / 1000 + ' s');
+    const connue = etat.etiquettes[etat.produit];
+    if (connue) { tentative.etiquette = connue; terminer(); }
+    else demanderEtiquette(tentative);
+  }
+}
+
+// UPC-A (12 chiffres) et EAN-13 commençant par 0 désignent le même produit.
+function normaliser(code) { return code.length === 12 ? '0' + code : code; }
+
+function demanderConformite(t) {
+  poser(`<p>Les chiffres imprimés sous les barres du produit n° ${t.produit} sont-ils :</p>
+    <p class="code">${echapper(t.code)}</p>`,
+    [['Oui, identiques', 'oui', () => { etat.references[t.produit] = t.code; t.conformite = 'juste'; }],
+     ['Non, lecture fausse', 'non', () => { t.conformite = 'faux'; }]]);
+}
+
+function demanderEtiquette(t) {
+  poser(`<p>Passe le produit n° ${t.produit} dans l’application native, sur ce téléphone. La lit-elle ?</p>`,
+    [['Oui, elle le lit', 'oui', () => { etat.etiquettes[t.produit] = 'lisible'; t.etiquette = 'lisible'; }],
+     ['Non plus', 'non', () => { etat.etiquettes[t.produit] = 'illisible'; t.etiquette = 'illisible'; }],
+     ['Plus tard', '', () => { t.etiquette = ''; }]]);
+}
+
+function poser(html, choix) {
+  questionOuverte = true; majBoutons();
+  const q = $('question');
+  q.innerHTML = html + '<div class="rangee"></div>';
+  const rangee = q.querySelector('.rangee');
+  for (const [texte, classe, action] of choix) {
+    const b = document.createElement('button');
+    b.textContent = texte; if (classe) b.className = classe;
+    b.addEventListener('click', () => { action(); q.hidden = true; questionOuverte = false; terminer(); });
+    rangee.appendChild(b);
+  }
+  q.hidden = false;
+}
+
+function terminer() {
+  etat.produit = (etat.produit % NB_PRODUITS) + 1;
+  sauver();
+  rendre();
+}
+
+// ---------------------------------------------------------------------------
+// Bilan : dernière tentative de chaque produit, par moteur et par éclairage
+// ---------------------------------------------------------------------------
+function bilan() {
+  const dernieres = new Map();
+  for (const t of etat.tentatives) dernieres.set(`${t.moteur}|${t.eclairage}|${t.produit}`, t);
+  const groupes = new Map();
+  for (const t of dernieres.values()) {
+    const cle = `${t.moteur}|${t.eclairage}`;
+    if (!groupes.has(cle)) groupes.set(cle, []);
+    groupes.get(cle).push(t);
+  }
+  const lignes = [];
+  for (const cle of Object.keys(moteurs).flatMap((m) => ['bonne', 'faible'].map((e) => `${m}|${e}`))) {
+    const ts = groupes.get(cle);
+    if (!ts) continue;
+    const [moteur, eclairage] = cle.split('|');
+    const lus = ts.filter((t) => t.resultat === 'lu');
+    const echecs = ts.filter((t) => t.resultat === 'echec');
+    const faux = lus.filter((t) => t.conformite === 'faux').length;
+    const nav = echecs.filter((t) => t.etiquette === 'lisible').length;
+    const aControler = echecs.filter((t) => !t.etiquette).length;
+    const etiq = echecs.filter((t) => t.etiquette === 'illisible').length;
+    const durees = lus.map((t) => t.duree_ms).sort((a, b) => a - b);
+    const mediane = durees.length ? durees[Math.floor((durees.length - 1) / 2)] : null;
+    let verdict;
+    if (ts.length < NB_PRODUITS || aControler) verdict = 'incomplet';
+    else if (faux === 0 && nav <= SEUIL[eclairage]) verdict = 'dans le seuil';
+    else verdict = 'hors seuil';
+    lignes.push({ moteur, eclairage, produits: ts.length, lus: lus.length, faux, nav, aControler, etiq, mediane, verdict });
+  }
+  return lignes;
+}
+
+function afficherBilan() {
+  const lignes = bilan();
+  if (!lignes.length) { $('bilan').innerHTML = '<p class="petit">Aucune tentative.</p>'; return; }
+  const classe = (v) => (v === 'dans le seuil' ? 'pret' : v === 'hors seuil' ? 'echec' : 'encours');
+  $('bilan').innerHTML = `<table><thead><tr><th>Moteur · éclairage</th><th>Produits</th><th>Lus</th><th>Faux</th>
+    <th>Échecs nav.</th><th>À contrôler</th><th>Étiquette</th><th>Médiane</th><th>Verdict</th></tr></thead><tbody>` +
+    lignes.map((l) => `<tr><td>${moteurs[l.moteur].court} · ${l.eclairage}</td><td>${l.produits}</td><td>${l.lus}</td>
+      <td>${l.faux}</td><td>${l.nav}</td><td>${l.aControler}</td><td>${l.etiq}</td>
+      <td>${l.mediane === null ? '—' : sec(l.mediane)}</td>
+      <td class="${classe(l.verdict)}">${l.verdict}</td></tr>`).join('') + '</tbody></table>';
+}
+
+function afficherListe() {
+  $('liste').innerHTML = etat.tentatives.slice().reverse().slice(0, 40).map((t) => {
+    const res = t.resultat === 'lu'
+      ? `lu ${sec(t.duree_ms)} · <span class="code" style="font-size:.85rem">${echapper(t.code)}</span> · ` +
+        `<span class="${t.conformite === 'faux' ? 'echec' : t.conformite === 'juste' ? 'pret' : 'encours'}">${t.conformite || 'à confirmer'}</span>`
+      : `<span class="echec">échec</span> · étiquette ${t.etiquette || 'à contrôler'}`;
+    return `<div>n° ${t.produit} · ${moteurs[t.moteur] ? moteurs[t.moteur].court : t.moteur} · ${t.eclairage} · ${res}</div>`;
+  }).join('') + (etat.tentatives.length > 40 ? '<div class="petit">… les plus anciennes sont dans le CSV.</div>' : '');
+}
+
+// ---------------------------------------------------------------------------
+// Export
+// ---------------------------------------------------------------------------
+const COLONNES = ['horodatage', 'telephone', 'camera', 'moteur', 'eclairage', 'produit', 'resultat', 'code',
+  'format', 'duree_ms', 'conformite', 'etiquette', 'erreur', 'navigateur'];
+function csv() {
+  const q = (v) => '"' + String(v === undefined || v === null ? '' : v).replace(/"/g, '""') + '"';
+  return [COLONNES.join(';'), ...etat.tentatives.map((t) => COLONNES.map((c) => q(t[c])).join(';'))].join('\r\n');
+}
+function nomFichier() {
+  const tel = (etat.telephone || 'telephone').replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  return `essai-scan-${tel}-${new Date().toISOString().slice(0, 10)}.csv`;
+}
+
+$('telecharger').addEventListener('click', () => {
+  const url = URL.createObjectURL(new Blob(['﻿' + csv()], { type: 'text/csv;charset=utf-8' }));
+  const a = document.createElement('a');
+  a.href = url; a.download = nomFichier();
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+});
+if (navigator.share) {
+  $('partager').hidden = false;
+  $('partager').addEventListener('click', async () => {
+    const fichier = new File(['﻿' + csv()], nomFichier(), { type: 'text/csv' });
+    try {
+      if (navigator.canShare && navigator.canShare({ files: [fichier] })) await navigator.share({ files: [fichier], title: nomFichier() });
+      else await navigator.share({ title: nomFichier(), text: csv() });
+    } catch (e) { /* partage annulé */ }
+  });
+}
+$('copier').addEventListener('click', async () => {
+  try { await navigator.clipboard.writeText(csv()); afficher('Résultats copiés'); }
+  catch (e) { afficher('Copie refusée par le navigateur'); }
+});
+$('annuler').addEventListener('click', () => {
+  const t = etat.tentatives.pop();
+  if (!t) return;
+  if (questionOuverte) { $('question').hidden = true; questionOuverte = false; }
+  etat.produit = t.produit;
+  sauver(); rendre(); afficher('Tentative du produit n° ' + t.produit + ' annulée');
+});
+$('effacer').addEventListener('click', () => {
+  if (!confirm('Effacer toutes les tentatives et les codes de référence de ce téléphone ?')) return;
+  const telephone = etat.telephone;
+  etat = structuredCloneSimple(ETAT_VIDE);
+  etat.telephone = telephone;
+  sauver(); rendre(); afficherMoteurs();
+});
+
+// ---------------------------------------------------------------------------
+// Interface
+// ---------------------------------------------------------------------------
+function echapper(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+function afficher(texte) { $('affiche').textContent = texte; }
+function sec(ms) { return (ms / 1000).toFixed(1).replace('.', ',') + ' s'; }
+function majBoutons() {
+  const m = moteurs[etat.moteur];
+  $('lancer').disabled = !flux || !m.detect || enCours || questionOuverte;
+  $('lancer').textContent = enCours ? 'Lecture…' : `Lancer (${DUREE_MAX / 1000} s)`;
+  $('moins').disabled = $('plus').disabled = enCours || questionOuverte;
+}
+function rendre() {
+  $('num').textContent = etat.produit;
+  $('telephone').value = etat.telephone;
+  $('eclairage').value = etat.eclairage;
+  afficherBilan(); afficherListe(); majBoutons();
+}
+
+$('total').textContent = NB_PRODUITS;
+document.querySelectorAll('.nb').forEach((e) => { e.textContent = NB_PRODUITS; });
+$('seuil-bonne').textContent = SEUIL.bonne;
+$('seuil-faible').textContent = SEUIL.faible;
+
+$('ouvrir').addEventListener('click', () => ouvrirCamera());
+$('camera').addEventListener('change', (e) => { if (e.target.value) ouvrirCamera(e.target.value); });
+$('lancer').addEventListener('click', lancer);
+$('moins').addEventListener('click', () => { etat.produit = ((etat.produit + NB_PRODUITS - 2) % NB_PRODUITS) + 1; sauver(); rendre(); });
+$('plus').addEventListener('click', () => { etat.produit = (etat.produit % NB_PRODUITS) + 1; sauver(); rendre(); });
+$('moteur').addEventListener('change', (e) => { etat.moteur = e.target.value; sauver(); majBoutons(); });
+$('eclairage').addEventListener('change', (e) => { etat.eclairage = e.target.value; sauver(); });
+$('telephone').addEventListener('change', (e) => { etat.telephone = e.target.value.trim(); sauver(); });
+
+if (!window.isSecureContext) {
+  $('securite').hidden = false;
+  $('securite').textContent = 'Page non sécurisée : le navigateur refusera la caméra. Ouvre l’adresse en https://.';
+}
+
+async function devinerTelephone() {
+  if (etat.telephone) return;
+  const ua = navigator.userAgent;
+  let t = /iPhone/.test(ua) ? 'iPhone' : /Android/.test(ua) ? 'Android' : '';
+  const ios = ua.match(/iPhone OS (\d+)_(\d+)/);
+  if (ios) t += ` · iOS ${ios[1]}.${ios[2]}`;
+  try {
+    if (navigator.userAgentData && navigator.userAgentData.getHighEntropyValues) {
+      const v = await navigator.userAgentData.getHighEntropyValues(['model', 'platformVersion']);
+      if (v.model) t = `${v.model} · ${t || navigator.userAgentData.platform} ${v.platformVersion || ''}`.trim();
+    }
+  } catch (e) { /* valeurs refusées */ }
+  etat.telephone = t; sauver(); rendre();
+}
+
+rendre();
+afficherMoteurs();
+devinerTelephone();
+verifierMoteurs();
+
+// Point d'accès pour un contrôle automatisé de la page (sans effet sur l'essai).
+window.__essai = { moteurs, toileDeControle, modulesEan13, bilan, csv, normaliser, etat: () => etat };
+</script>
+</body>
+</html>
