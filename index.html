@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<title>Essai de scan</title>
+<title>Essai du premier garde-fou</title>
 <style>
   :root {
     --fond: #f5f5f2; --carte: #ffffff; --texte: #1c1c1a; --doux: #66665f;
@@ -68,9 +68,16 @@
 </style>
 </head>
 <body>
-<h1>Essai de scan</h1>
+<h1>Essai du premier garde-fou</h1>
 
 <section id="securite" class="carte avert" hidden></section>
+
+<section class="carte">
+  <p class="petit" style="margin:0">Garde-fou : un code n’est accepté qu’après <b>deux lectures identiques à la suite</b>,
+    sur deux images distinctes de la caméra. Une image sans lecture ne remet pas le compte à zéro ;
+    une lecture différente le remet.</p>
+  <p id="reprise" class="petit" style="margin:8px 0 0" hidden></p>
+</section>
 
 <section id="moteurs" class="carte">
   <h2>Moteurs de lecture</h2>
@@ -113,9 +120,10 @@
 <section class="carte">
   <h2>Bilan</h2>
   <div id="bilan" class="tableau"></div>
-  <p class="petit">Seuil : aucune lecture fausse ; au plus <span id="seuil-bonne"></span> échecs du navigateur
+  <p class="petit">Seuil : aucune lecture fausse acceptée ; au plus <span id="seuil-bonne"></span> échecs du navigateur
     sur <span class="nb"></span> en bonne lumière, <span id="seuil-faible"></span> en lumière faible.
-    Le bilan retient la dernière tentative de chaque produit.</p>
+    « Faux bruts » : produits où au moins une lecture brute différait de la référence ; le garde-fou
+    les a arrêtés s’ils ne figurent pas en « Faux acceptés ». Le bilan retient la dernière tentative de chaque produit.</p>
 </section>
 
 <section class="carte">
@@ -127,7 +135,10 @@
   </div>
   <div class="rangee">
     <button id="annuler">Annuler la dernière</button>
-    <button id="effacer">Tout effacer</button>
+    <button id="effacer">Effacer les tentatives</button>
+  </div>
+  <div class="rangee">
+    <button id="tout-effacer">Tout effacer, références comprises</button>
   </div>
   <div id="liste"></div>
 </section>
@@ -143,19 +154,40 @@ const FORMATS = ['ean_13', 'ean_8', 'upc_a', 'upc_e'];
 const URL_ZXING_CPP = 'https://cdn.jsdelivr.net/npm/barcode-detector@3.2.3/dist/es/ponyfill.min.js';
 const URL_ZXING_JS = 'https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js';
 const CODE_TEST = '4006381333931';
-const CLE = 'essai-scan-v1';
+const CLE = 'essai-garde-fou-v1';
+const ANCIENNE_CLE = 'essai-scan-v1';    // essai du scan du 2026-11-11, même adresse
+const LECTURES_EXIGEES = 2;              // le premier garde-fou
 
 const $ = (id) => document.getElementById(id);
 
 // ---------------------------------------------------------------------------
 // État, conservé dans le navigateur du téléphone
 // ---------------------------------------------------------------------------
-const ETAT_VIDE = { telephone: '', moteur: 'zxing-cpp', eclairage: 'bonne', produit: 1,
-  references: {}, etiquettes: {}, tentatives: [] };
+const ETAT_VIDE = { telephone: '', moteur: 'integre', eclairage: 'faible', produit: 1,
+  references: {}, etiquettes: {}, tentatives: [], reprise: null };
 let etat = structuredCloneSimple(ETAT_VIDE);
 try { Object.assign(etat, JSON.parse(localStorage.getItem(CLE) || '{}')); } catch (e) { /* stockage indisponible */ }
 function sauver() { try { localStorage.setItem(CLE, JSON.stringify(etat)); } catch (e) { /* idem */ } }
 function structuredCloneSimple(o) { return JSON.parse(JSON.stringify(o)); }
+
+// Au premier chargement, reprise des codes de référence et des réponses de l'application
+// native enregistrés par la page de l'essai du scan sur ce même téléphone. Les tentatives
+// de cet essai-là ne sont pas reprises.
+function reprendreEssaiPrecedent() {
+  let ancien = null;
+  try {
+    if (localStorage.getItem(CLE)) return;
+    ancien = JSON.parse(localStorage.getItem(ANCIENNE_CLE) || 'null');
+  } catch (e) { return; }
+  if (!ancien) return;
+  etat.references = ancien.references || {};
+  etat.etiquettes = ancien.etiquettes || {};
+  if (ancien.telephone) etat.telephone = ancien.telephone;
+  etat.reprise = { le: new Date().toISOString(), references: Object.keys(etat.references).length,
+    etiquettes: Object.keys(etat.etiquettes).length };
+  sauver();
+}
+reprendreEssaiPrecedent();
 
 // ---------------------------------------------------------------------------
 // Les trois moteurs. Chacun reçoit une toile (canvas) et rend {texte, format} ou null.
@@ -348,6 +380,25 @@ function saisirTrame() {
   return trame;
 }
 
+// Numéro de l'image affichée par la caméra : deux lectures du garde-fou doivent venir de deux
+// images distinctes, sinon la même image lue deux fois donnerait deux fois la même erreur.
+let numeroImage = 0;
+if (video.requestVideoFrameCallback) {
+  const suivre = (maintenant, meta) => {
+    numeroImage = (meta && meta.presentedFrames) || numeroImage + 1;
+    video.requestVideoFrameCallback(suivre);
+  };
+  video.requestVideoFrameCallback(suivre);
+}
+function idImage() { return video.requestVideoFrameCallback ? numeroImage : video.currentTime; }
+
+// Résumé des lectures brutes d'une tentative : « code×nombre », dans l'ordre d'apparition.
+function resumerBrutes(brutes) {
+  const n = new Map();
+  for (const c of brutes || []) n.set(c, (n.get(c) || 0) + 1);
+  return [...n].map(([c, k]) => `${c}×${k}`).join('|');
+}
+
 // ---------------------------------------------------------------------------
 // Une tentative
 // ---------------------------------------------------------------------------
@@ -359,15 +410,24 @@ async function lancer() {
   if (enCours || questionOuverte || !m.detect || !flux) return;
   enCours = true; majBoutons();
   const t0 = performance.now();
-  let trouve = null, erreur = null;
+  let trouve = null, erreur = null, premiere = null, candidat = null, derniereImage = null, serie = 0;
+  const brutes = [];
   while (performance.now() - t0 < DUREE_MAX) {
-    afficher(sec(DUREE_MAX - (performance.now() - t0)));
-    const t = saisirTrame();
-    if (t) {
-      try { trouve = await m.detect(t); } catch (e) { erreur = e; }
-      if (trouve) break;
-    }
+    afficher(sec(DUREE_MAX - (performance.now() - t0)) + (serie ? ` · ${serie}/${LECTURES_EXIGEES}` : ''));
     await new Promise((ok) => requestAnimationFrame(ok));
+    const id = idImage();
+    if (id === derniereImage) continue;          // même image que la précédente : attendre la suivante
+    const t = saisirTrame();
+    if (!t) continue;
+    derniereImage = id;
+    let r = null;
+    try { r = await m.detect(t); } catch (e) { erreur = e; }
+    if (!r) continue;                            // image sans lecture : le compte n'est pas remis à zéro
+    if (premiere === null) premiere = Math.round(performance.now() - t0);
+    brutes.push(r.texte);
+    if (candidat && candidat.texte === r.texte) serie += 1;
+    else { candidat = r; serie = 1; }            // lecture différente : le compte repart de un
+    if (serie >= LECTURES_EXIGEES) { trouve = r; break; }
   }
   const duree = Math.round(performance.now() - t0);
   enCours = false;
@@ -383,6 +443,8 @@ async function lancer() {
     code: trouve ? trouve.texte : '',
     format: trouve ? trouve.format : '',
     duree_ms: trouve ? duree : '',
+    premiere_ms: premiere === null ? '' : premiere,
+    brutes,
     conformite: '',
     etiquette: '',
     erreur: erreur ? String(erreur.message || erreur) : '',
@@ -394,8 +456,9 @@ async function lancer() {
     if (navigator.vibrate) navigator.vibrate(80);
     afficher(trouve.texte + ' · ' + sec(duree));
     const ref = etat.references[etat.produit];
-    if (ref) { tentative.conformite = normaliser(ref) === normaliser(trouve.texte) ? 'juste' : 'faux'; terminer(); }
-    else demanderConformite(tentative);
+    if (!ref) demanderConformite(tentative);
+    else if (normaliser(ref) === normaliser(trouve.texte)) { tentative.conformite = 'juste'; terminer(); }
+    else demanderDiscordance(tentative, ref);
   } else {
     afficher('Échec — rien lu en ' + DUREE_MAX / 1000 + ' s');
     // La réponse de l'application native vaut pour le produit dans cet éclairage seulement.
@@ -413,6 +476,19 @@ function demanderConformite(t) {
     <p class="code">${echapper(t.code)}</p>`,
     [['Oui, identiques', 'oui', () => { etat.references[t.produit] = t.code; t.conformite = 'juste'; }],
      ['Non, lecture fausse', 'non', () => { t.conformite = 'faux'; }]]);
+}
+
+// Le code accepté diffère de la référence : lecture fausse, produit remplacé depuis l'essai
+// précédent, ou mauvais produit en main (l'essai du scan a inversé les n° 17 et 18).
+function demanderDiscordance(t, ref) {
+  poser(`<p>Le code accepté pour le produit n° ${t.produit} diffère de sa référence.</p>
+    <p>Lu : <span class="code">${echapper(t.code)}</span><br>Référence : <span class="code">${echapper(ref)}</span></p>
+    <p>Regarde les chiffres imprimés sous les barres du produit que tu tiens.</p>`,
+    [['Ce sont ceux de la référence : lecture fausse', 'non', () => { t.conformite = 'faux'; }],
+     ['Ce sont ceux du code lu : le produit n° ' + t.produit + ' a été remplacé', 'oui',
+       () => { etat.references[t.produit] = t.code; t.conformite = 'juste'; t.reference_changee = 'oui'; }],
+     ['Je ne tiens pas le produit n° ' + t.produit + ' : refaire', '',
+       () => { etat.tentatives.pop(); etat.produit = t.produit - 1 || NB_PRODUITS; }]]);
 }
 
 function demanderEtiquette(t) {
@@ -462,6 +538,7 @@ function bilan() {
     const lus = ts.filter((t) => t.resultat === 'lu');
     const echecs = ts.filter((t) => t.resultat === 'echec');
     const faux = lus.filter((t) => t.conformite === 'faux').length;
+    const fauxBruts = ts.filter((t) => fauxBrutsDe(t) > 0).length;
     const nav = echecs.filter((t) => t.etiquette === 'lisible').length;
     const aControler = echecs.filter((t) => !t.etiquette).length;
     const etiq = echecs.filter((t) => t.etiquette === 'illisible').length;
@@ -471,19 +548,26 @@ function bilan() {
     if (ts.length < NB_PRODUITS || aControler) verdict = 'incomplet';
     else if (faux === 0 && nav <= SEUIL[eclairage]) verdict = 'dans le seuil';
     else verdict = 'hors seuil';
-    lignes.push({ moteur, eclairage, produits: ts.length, lus: lus.length, faux, nav, aControler, etiq, mediane, verdict });
+    lignes.push({ moteur, eclairage, produits: ts.length, lus: lus.length, faux, fauxBruts, nav, aControler, etiq, mediane, verdict });
   }
   return lignes;
+}
+
+// Lectures brutes d'une tentative qui diffèrent de la référence du produit.
+function fauxBrutsDe(t) {
+  const ref = etat.references[t.produit];
+  if (!ref) return 0;
+  return (t.brutes || []).filter((c) => normaliser(c) !== normaliser(ref)).length;
 }
 
 function afficherBilan() {
   const lignes = bilan();
   if (!lignes.length) { $('bilan').innerHTML = '<p class="petit">Aucune tentative.</p>'; return; }
   const classe = (v) => (v === 'dans le seuil' ? 'pret' : v === 'hors seuil' ? 'echec' : 'encours');
-  $('bilan').innerHTML = `<table><thead><tr><th>Moteur · éclairage</th><th>Produits</th><th>Lus</th><th>Faux</th>
-    <th>Échecs nav.</th><th>À contrôler</th><th>Étiquette</th><th>Médiane</th><th>Verdict</th></tr></thead><tbody>` +
+  $('bilan').innerHTML = `<table><thead><tr><th>Moteur · éclairage</th><th>Produits</th><th>Lus</th><th>Faux bruts</th>
+    <th>Faux acceptés</th><th>Échecs nav.</th><th>À contrôler</th><th>Étiquette</th><th>Médiane</th><th>Verdict</th></tr></thead><tbody>` +
     lignes.map((l) => `<tr><td>${moteurs[l.moteur].court} · ${l.eclairage}</td><td>${l.produits}</td><td>${l.lus}</td>
-      <td>${l.faux}</td><td>${l.nav}</td><td>${l.aControler}</td><td>${l.etiq}</td>
+      <td>${l.fauxBruts}</td><td>${l.faux}</td><td>${l.nav}</td><td>${l.aControler}</td><td>${l.etiq}</td>
       <td>${l.mediane === null ? '—' : sec(l.mediane)}</td>
       <td class="${classe(l.verdict)}">${l.verdict}</td></tr>`).join('') + '</tbody></table>';
 }
@@ -494,7 +578,9 @@ function afficherListe() {
       ? `lu ${sec(t.duree_ms)} · <span class="code" style="font-size:.85rem">${echapper(t.code)}</span> · ` +
         `<span class="${t.conformite === 'faux' ? 'echec' : t.conformite === 'juste' ? 'pret' : 'encours'}">${t.conformite || 'à confirmer'}</span>`
       : `<span class="echec">échec</span> · étiquette ${t.etiquette || 'à contrôler'}`;
-    return `<div>n° ${t.produit} · ${moteurs[t.moteur] ? moteurs[t.moteur].court : t.moteur} · ${t.eclairage} · ${res}</div>`;
+    const fb = fauxBrutsDe(t);
+    const brut = `${(t.brutes || []).length} lecture(s) brute(s)` + (fb ? ` dont <span class="echec">${fb} fausse(s)</span>` : '');
+    return `<div>n° ${t.produit} · ${moteurs[t.moteur] ? moteurs[t.moteur].court : t.moteur} · ${t.eclairage} · ${res} · ${brut}</div>`;
   }).join('') + (etat.tentatives.length > 40 ? '<div class="petit">… les plus anciennes sont dans le CSV.</div>' : '');
 }
 
@@ -502,14 +588,24 @@ function afficherListe() {
 // Export
 // ---------------------------------------------------------------------------
 const COLONNES = ['horodatage', 'telephone', 'camera', 'moteur', 'eclairage', 'produit', 'resultat', 'code',
-  'format', 'duree_ms', 'conformite', 'etiquette', 'erreur', 'navigateur'];
+  'format', 'duree_ms', 'premiere_ms', 'lectures_brutes', 'codes_bruts', 'faux_bruts', 'reference',
+  'reference_changee', 'conformite', 'etiquette', 'erreur', 'navigateur'];
 function csv() {
   const q = (v) => '"' + String(v === undefined || v === null ? '' : v).replace(/"/g, '""') + '"';
-  return [COLONNES.join(';'), ...etat.tentatives.map((t) => COLONNES.map((c) => q(t[c])).join(';'))].join('\r\n');
+  const ligne = (t) => {
+    const l = Object.assign({}, t, {
+      lectures_brutes: (t.brutes || []).length,
+      codes_bruts: resumerBrutes(t.brutes),
+      faux_bruts: fauxBrutsDe(t),
+      reference: etat.references[t.produit] || '',
+    });
+    return COLONNES.map((c) => q(l[c])).join(';');
+  };
+  return [COLONNES.join(';'), ...etat.tentatives.map(ligne)].join('\r\n');
 }
 function nomFichier() {
   const tel = (etat.telephone || 'telephone').replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '');
-  return `essai-scan-${tel}-${new Date().toISOString().slice(0, 10)}.csv`;
+  return `essai-garde-fou-${tel}-${new Date().toISOString().slice(0, 10)}.csv`;
 }
 
 $('telecharger').addEventListener('click', () => {
@@ -541,10 +637,18 @@ $('annuler').addEventListener('click', () => {
   sauver(); rendre(); afficher('Tentative du produit n° ' + t.produit + ' annulée');
 });
 $('effacer').addEventListener('click', () => {
-  if (!confirm('Effacer toutes les tentatives et les codes de référence de ce téléphone ?')) return;
+  if (!confirm('Effacer toutes les tentatives ? Les codes de référence et les réponses de l’application native sont gardés.')) return;
+  if (questionOuverte) { $('question').hidden = true; questionOuverte = false; }
+  etat.tentatives = []; etat.produit = 1;
+  sauver(); rendre();
+});
+$('tout-effacer').addEventListener('click', () => {
+  if (!confirm('Effacer les tentatives ET les codes de référence de ce téléphone ? Il faudra reconfirmer chaque produit.')) return;
+  if (questionOuverte) { $('question').hidden = true; questionOuverte = false; }
   const telephone = etat.telephone;
   etat = structuredCloneSimple(ETAT_VIDE);
   etat.telephone = telephone;
+  etat.reprise = { le: new Date().toISOString(), references: 0, etiquettes: 0, efface: true };
   sauver(); rendre(); afficherMoteurs();
 });
 
@@ -566,6 +670,12 @@ function rendre() {
   $('num').textContent = etat.produit;
   $('telephone').value = etat.telephone;
   $('eclairage').value = etat.eclairage;
+  const r = etat.reprise;
+  $('reprise').hidden = !r;
+  if (r) $('reprise').textContent = r.efface
+    ? 'Références effacées : chaque produit sera reconfirmé à sa première lecture.'
+    : `Repris de l’essai du scan sur ce téléphone : ${r.references} code(s) de référence, ` +
+      `${r.etiquettes} réponse(s) de l’application native.`;
   afficherBilan(); afficherListe(); majBoutons();
 }
 
@@ -609,7 +719,8 @@ devinerTelephone();
 verifierMoteurs();
 
 // Point d'accès pour un contrôle automatisé de la page (sans effet sur l'essai).
-window.__essai = { moteurs, toileDeControle, modulesEan13, bilan, csv, normaliser, etat: () => etat };
+window.__essai = { moteurs, toileDeControle, modulesEan13, bilan, csv, normaliser, fauxBrutsDe, resumerBrutes,
+  etat: () => etat, LECTURES_EXIGEES };
 </script>
 </body>
 </html>
